@@ -1,10 +1,16 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 type Booking = {
   id: number;
+  customer_name: string | null;
+  customer_email: string | null;
+  customer_phone: string | null;
+  assigned_to: string | null;
+  admin_notes: string | null;
   pickup_address: string;
   dropoff_address: string;
   move_date: string;
@@ -22,6 +28,9 @@ export default function AdminPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [quoteInputs, setQuoteInputs] = useState<Record<number, string>>({});
+  const [assignmentInputs, setAssignmentInputs] = useState<
+    Record<number, { assigned_to: string; admin_notes: string }>
+  >({});
 
   async function loadBookings() {
     const { data, error } = await supabase
@@ -32,11 +41,20 @@ export default function AdminPage() {
     if (!error && data) {
       setBookings(data);
       const initialQuotes: Record<number, string> = {};
+      const initialAssignments: Record<
+        number,
+        { assigned_to: string; admin_notes: string }
+      > = {};
       data.forEach((booking: Booking) => {
         initialQuotes[booking.id] =
           booking.quote_price === null ? "" : String(booking.quote_price);
+        initialAssignments[booking.id] = {
+          assigned_to: booking.assigned_to ?? "",
+          admin_notes: booking.admin_notes ?? "",
+        };
       });
       setQuoteInputs(initialQuotes);
+      setAssignmentInputs(initialAssignments);
     }
 
     setLoading(false);
@@ -113,6 +131,83 @@ export default function AdminPage() {
       ...prev,
       [booking.id]: price === null ? "" : String(price),
     }));
+
+    if (price !== null) {
+      try {
+        const response = await fetch("/api/send-quote", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            customer_name: booking.customer_name,
+            customer_email: booking.customer_email,
+            quote_price: price,
+            pickup_address: booking.pickup_address,
+            dropoff_address: booking.dropoff_address,
+            move_date: booking.move_date,
+          }),
+        });
+
+        if (!response.ok) {
+          alert("Quote saved, but email notification failed to send.");
+        }
+      } catch {
+        alert("Quote saved, but email notification failed to send.");
+      }
+    }
+  }
+
+  async function saveAssignment(booking: Booking) {
+    const currentInput = assignmentInputs[booking.id] ?? {
+      assigned_to: booking.assigned_to ?? "",
+      admin_notes: booking.admin_notes ?? "",
+    };
+
+    const assignedTo = currentInput.assigned_to.trim();
+    const adminNotes = currentInput.admin_notes.trim();
+    const assignedToValue = assignedTo === "" ? null : assignedTo;
+    const adminNotesValue = adminNotes === "" ? null : adminNotes;
+
+    if (
+      booking.assigned_to === assignedToValue &&
+      booking.admin_notes === adminNotesValue
+    ) {
+      return;
+    }
+
+    const { error } = await supabase
+      .from("bookings")
+      .update({
+        assigned_to: assignedToValue,
+        admin_notes: adminNotesValue,
+      })
+      .eq("id", booking.id);
+
+    if (error) {
+      alert("Failed to save assignment details.");
+      return;
+    }
+
+    setBookings((prev) =>
+      prev.map((item) =>
+        item.id === booking.id
+          ? {
+              ...item,
+              assigned_to: assignedToValue,
+              admin_notes: adminNotesValue,
+            }
+          : item
+      )
+    );
+
+    setAssignmentInputs((prev) => ({
+      ...prev,
+      [booking.id]: {
+        assigned_to: assignedToValue ?? "",
+        admin_notes: adminNotesValue ?? "",
+      },
+    }));
   }
 
   function getStatusClasses(status: string | null) {
@@ -135,6 +230,11 @@ export default function AdminPage() {
     const matchesStatus = statusFilter === "all" || bookingStatus === statusFilter;
     const matchesSearch =
       normalizedSearch === "" ||
+      (booking.customer_name ?? "").toLowerCase().includes(normalizedSearch) ||
+      (booking.customer_email ?? "").toLowerCase().includes(normalizedSearch) ||
+      (booking.customer_phone ?? "").toLowerCase().includes(normalizedSearch) ||
+      (booking.assigned_to ?? "").toLowerCase().includes(normalizedSearch) ||
+      (booking.admin_notes ?? "").toLowerCase().includes(normalizedSearch) ||
       booking.pickup_address.toLowerCase().includes(normalizedSearch) ||
       booking.dropoff_address.toLowerCase().includes(normalizedSearch);
     return matchesStatus && matchesSearch;
@@ -146,8 +246,18 @@ export default function AdminPage() {
 
   return (
     <main className="min-h-screen p-8">
-      <h1 className="text-3xl font-bold">Admin Dashboard</h1>
-      <p className="mt-2 text-gray-600">All booking requests</p>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+          <p className="mt-2 text-gray-600">All booking requests</p>
+        </div>
+        <Link
+          href="/calendar"
+          className="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+        >
+          View Calendar
+        </Link>
+      </div>
 
       <div className="mt-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div className="flex flex-wrap gap-2">
@@ -168,7 +278,7 @@ export default function AdminPage() {
         </div>
         <input
           type="text"
-          placeholder="Search pickup or dropoff..."
+          placeholder="Search name, phone, email, assignment, notes, pickup, or dropoff..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           className="w-full rounded border border-gray-300 px-3 py-2 text-sm md:w-80"
@@ -180,6 +290,11 @@ export default function AdminPage() {
           <thead className="bg-gray-100">
             <tr>
               <th className="border px-4 py-2 text-left">ID</th>
+              <th className="border px-4 py-2 text-left">Name</th>
+              <th className="border px-4 py-2 text-left">Phone</th>
+              <th className="border px-4 py-2 text-left">Email</th>
+              <th className="border px-4 py-2 text-left">Assigned To</th>
+              <th className="border px-4 py-2 text-left">Notes</th>
               <th className="border px-4 py-2 text-left">Pickup</th>
               <th className="border px-4 py-2 text-left">Dropoff</th>
               <th className="border px-4 py-2 text-left">Move Date</th>
@@ -191,7 +306,7 @@ export default function AdminPage() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={7} className="border px-4 py-6 text-center">
+                <td colSpan={12} className="border px-4 py-6 text-center">
                   Loading...
                 </td>
               </tr>
@@ -199,6 +314,51 @@ export default function AdminPage() {
               filteredBookings.map((booking) => (
                 <tr key={booking.id}>
                   <td className="border px-4 py-2">{booking.id}</td>
+                  <td className="border px-4 py-2">{booking.customer_name ?? "-"}</td>
+                  <td className="border px-4 py-2">{booking.customer_phone ?? "-"}</td>
+                  <td className="border px-4 py-2">{booking.customer_email ?? "-"}</td>
+                  <td className="border px-4 py-2">
+                    <input
+                      type="text"
+                      className="w-32 rounded border p-2"
+                      placeholder="Mover/Driver"
+                      value={assignmentInputs[booking.id]?.assigned_to ?? ""}
+                      onChange={(e) =>
+                        setAssignmentInputs((prev) => ({
+                          ...prev,
+                          [booking.id]: {
+                            assigned_to: e.target.value,
+                            admin_notes: prev[booking.id]?.admin_notes ?? "",
+                          },
+                        }))
+                      }
+                    />
+                  </td>
+                  <td className="border px-4 py-2">
+                    <div className="flex items-center gap-2">
+                      <textarea
+                        className="min-h-10 w-48 rounded border p-2 text-sm"
+                        placeholder="Internal notes"
+                        value={assignmentInputs[booking.id]?.admin_notes ?? ""}
+                        onChange={(e) =>
+                          setAssignmentInputs((prev) => ({
+                            ...prev,
+                            [booking.id]: {
+                              assigned_to: prev[booking.id]?.assigned_to ?? "",
+                              admin_notes: e.target.value,
+                            },
+                          }))
+                        }
+                      />
+                      <button
+                        type="button"
+                        className="rounded bg-gray-900 px-3 py-2 text-xs font-medium text-white hover:bg-gray-800"
+                        onClick={() => saveAssignment(booking)}
+                      >
+                        Save
+                      </button>
+                    </div>
+                  </td>
                   <td className="border px-4 py-2">{booking.pickup_address}</td>
                   <td className="border px-4 py-2">{booking.dropoff_address}</td>
                   <td className="border px-4 py-2">{booking.move_date}</td>
@@ -255,7 +415,7 @@ export default function AdminPage() {
               ))
             ) : (
               <tr>
-                <td colSpan={7} className="border px-4 py-6 text-center text-gray-500">
+                <td colSpan={12} className="border px-4 py-6 text-center text-gray-500">
                   No bookings found.
                 </td>
               </tr>

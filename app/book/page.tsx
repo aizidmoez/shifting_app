@@ -4,6 +4,9 @@ import { useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 export default function BookPage() {
+  const [customerName, setCustomerName] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
   const [pickupAddress, setPickupAddress] = useState("");
   const [dropoffAddress, setDropoffAddress] = useState("");
   const [moveDate, setMoveDate] = useState("");
@@ -17,6 +20,9 @@ export default function BookPage() {
 
     const { error } = await supabase.from("bookings").insert([
       {
+        customer_name: customerName,
+        customer_email: customerEmail,
+        customer_phone: customerPhone,
         pickup_address: pickupAddress,
         dropoff_address: dropoffAddress,
         move_date: moveDate,
@@ -31,6 +37,9 @@ export default function BookPage() {
     }
 
     setMessage("Booking request submitted successfully.");
+    setCustomerName("");
+    setCustomerEmail("");
+    setCustomerPhone("");
     setPickupAddress("");
     setDropoffAddress("");
     setMoveDate("");
@@ -46,6 +55,36 @@ export default function BookPage() {
         className="flex w-full max-w-md flex-col gap-4"
       >
         <input
+          name="customer_name"
+          className="rounded border p-3"
+          placeholder="Full name"
+          value={customerName}
+          onChange={(e) => setCustomerName(e.target.value)}
+          required
+        />
+
+        <input
+          name="customer_email"
+          className="rounded border p-3"
+          type="email"
+          placeholder="Email"
+          value={customerEmail}
+          onChange={(e) => setCustomerEmail(e.target.value)}
+          required
+        />
+
+        <input
+          name="customer_phone"
+          className="rounded border p-3"
+          type="tel"
+          placeholder="Phone"
+          value={customerPhone}
+          onChange={(e) => setCustomerPhone(e.target.value)}
+          required
+        />
+
+        <input
+          name="pickup_address"
           className="rounded border p-3"
           placeholder="Pickup address"
           value={pickupAddress}
@@ -54,6 +93,7 @@ export default function BookPage() {
         />
 
         <input
+          name="dropoff_address"
           className="rounded border p-3"
           placeholder="Dropoff address"
           value={dropoffAddress}
@@ -62,6 +102,7 @@ export default function BookPage() {
         />
 
         <input
+          name="move_date"
           className="rounded border p-3"
           type="date"
           value={moveDate}
